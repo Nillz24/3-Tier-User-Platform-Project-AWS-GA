@@ -1,0 +1,120 @@
+# Trigger Test-3
+name: Production CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - k8-manifests/prod/app-deployment.yaml
+      - .github/workflows/prod-cd.yaml
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  promote-image-to-prod:
+    name: Pull QA Latest and Retag for Prod
+    runs-on: ubuntu-latest
+
+    env:
+      QA_IMAGE: devopsshack/nodejs-app:latest
+      PROD_LATEST_IMAGE: devopsshack/nodejs-app:prod-${{ github.sha }}
+
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Pull QA latest image
+        run: docker pull "${QA_IMAGE}"
+
+      - name: Retag image for production
+        run: |
+          docker tag "${QA_IMAGE}" "${PROD_LATEST_IMAGE}"
+
+      - name: Push prod images
+        run: |
+          docker push "${PROD_LATEST_IMAGE}"
+
+  update-prod-manifest:
+    name: Update Prod Manifest
+    needs: promote-image-to-prod
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Checkout main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Update image tag in prod manifest
+        run: |
+          sed -i "s|image: devopsshack/nodejs-app:.*|image: devopsshack/nodejs-app:prod-${GITHUB_SHA}|g" k8-manifests/prod/app-deployment.yaml
+
+      - name: Show updated manifest
+        run: cat k8-manifests/prod/app-deployment.yaml
+
+      - name: Commit and push updated prod manifest
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add k8-manifests/prod/app-deployment.yaml
+          git commit -m "Update prod image to prod-${GITHUB_SHA} [skip ci]" || echo "No changes to commit"
+          git push origin main
+
+  deploy-to-k8s:
+    name: Deploy to Production Kubernetes
+    needs: update-prod-manifest
+    runs-on: ubuntu-latest
+
+    env:
+      AWS_REGION: ap-south-1
+      EKS_CLUSTER_NAME: my-cluster
+      K8S_NAMESPACE: prod
+
+    steps:
+      - name: Checkout latest main
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
+
+      - name: Configure AWS credentials from GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME1 }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Generate kubeconfig for EKS
+        run: aws eks update-kubeconfig --region "${AWS_REGION}" --name "${EKS_CLUSTER_NAME}"
+
+      - name: Verify identity
+        run: |
+          aws sts get-caller-identity
+          kubectl config current-context
+
+      - name: Verify namespace access
+        run: |
+          kubectl get pods -n "${K8S_NAMESPACE}" || true
+          kubectl get services -n "${K8S_NAMESPACE}" || true
+          kubectl auth can-i create deployments -n "${K8S_NAMESPACE}"
+          kubectl auth can-i create services -n "${K8S_NAMESPACE}"
+          kubectl auth can-i create ingresses.networking.k8s.io -n "${K8S_NAMESPACE}"
+
+      - name: Deploy prod manifests
+        run: |
+          kubectl apply -f k8-manifests/prod/ -n "${K8S_NAMESPACE}"
+
+      - name: Verify rollout
+        run: |
+          kubectl rollout status deployment/nodejs-app -n "${K8S_NAMESPACE}" --timeout=180s
