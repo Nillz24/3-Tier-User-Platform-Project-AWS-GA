@@ -1,13 +1,15 @@
 # Trigger Test-1
 name: Enterprise DevSecOps CICD Pipeline
 on:
-  push:
+  pull_request:
     branches:
       - qa
     paths:
       - client/**
       - server/**
       - .github/workflows/qa-cicd.yml
+    types:
+      - closed  
 permissions:
   contents: write
   id-token: write
