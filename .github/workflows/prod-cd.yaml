@@ -2,12 +2,14 @@
 name: Production CD Pipeline
 
 on:
-  push:
+  pull_request:
     branches:
       - main
     paths:
       - k8-manifests/prod/app-deployment.yaml
       - .github/workflows/prod-cd.yaml
+    types:
+      - closed  
 
 permissions:
   contents: write
