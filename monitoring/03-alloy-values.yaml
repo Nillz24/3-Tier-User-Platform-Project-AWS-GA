@@ -1,0 +1,245 @@
+## ============================================================
+## 03-alloy-values.yaml
+## Chart: grafana/alloy  |  Version: 0.12.0
+## ── FIXES APPLIED ──────────────────────────────────────────
+## FIX 1: loki.source.kubernetes instead of loki.source.file
+##         File method fails on EKS when Alloy runs on a
+##         different node than the target pod.
+## FIX 2: Prometheus remote_write uses SHORT service name
+##         monitoring-kube-prometheus-prometheus (NOT -stack-)
+##         The -stack- suffix does not exist in this cluster.
+## FIX 3: Removed all loki.process drop/JSON stages
+##         drop_malformed=true was silently dropping all
+##         non-JSON logs (mysql plain text, nodejs plain text)
+## ============================================================
+
+alloy:
+  configMap:
+    create: true
+    content: |
+
+      // ══════════════════════════════════════════════════════
+      // LOG COLLECTION PIPELINE  →  qa namespace  →  Loki
+      // ══════════════════════════════════════════════════════
+
+      // Step 1: Discover all pods in qa namespace
+      discovery.kubernetes "qa_pods" {
+        role = "pod"
+        namespaces {
+          names = ["qa"]
+        }
+      }
+
+      // Step 2: Relabel - enrich labels from pod metadata
+      discovery.relabel "qa_pod_logs" {
+        targets = discovery.kubernetes.qa_pods.targets
+
+        // Drop pods that explicitly opt out of log collection
+        rule {
+          source_labels = ["__meta_kubernetes_pod_annotation_grafana_io_scrape_logs"]
+          regex         = "false"
+          action        = "drop"
+        }
+
+        // Drop pods not in Running phase
+        rule {
+          source_labels = ["__meta_kubernetes_pod_phase"]
+          regex         = "Pending|Succeeded|Failed|Unknown"
+          action        = "drop"
+        }
+
+        // namespace label
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+
+        // pod name label
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+
+        // container name label
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "container"
+        }
+
+        // app label (prefer app.kubernetes.io/name, fallback to app)
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+          regex         = "(.+)"
+          target_label  = "app"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app"]
+          regex         = "(.+)"
+          target_label  = "app"
+        }
+
+        // node label
+        rule {
+          source_labels = ["__meta_kubernetes_pod_node_name"]
+          target_label  = "node"
+        }
+      }
+
+      // Step 3: Stream logs via Kubernetes API (works across all nodes)
+      loki.source.kubernetes "qa_pod_logs" {
+        targets    = discovery.relabel.qa_pod_logs.output
+        forward_to = [loki.process.qa_pod_logs.receiver]
+      }
+
+      // Step 4: Forward to Loki - NO drop stages
+      // IMPORTANT: Do NOT add stage.json / drop_malformed here.
+      // mysql and nodejs logs are plain text, not JSON.
+      // Any JSON/drop stage will silently discard all logs.
+      loki.process "qa_pod_logs" {
+        forward_to = [loki.write.loki_gateway.receiver]
+      }
+
+      // Step 5: Write logs to Loki via the gateway
+      // Uses short service name (same namespace) for reliable DNS
+      loki.write "loki_gateway" {
+        endpoint {
+          url = "http://loki-gateway/loki/api/v1/push"
+        }
+        external_labels = {
+          cluster = "eks-cluster",
+          env     = "qa",
+        }
+      }
+
+      // ══════════════════════════════════════════════════════
+      // METRICS PIPELINE  →  qa namespace  →  Prometheus
+      // ══════════════════════════════════════════════════════
+
+      // Step 1: Discover pods in qa namespace
+      discovery.kubernetes "qa_metrics" {
+        role = "pod"
+        namespaces {
+          names = ["qa"]
+        }
+      }
+
+      // Step 2: Only keep pods with prometheus.io/scrape: "true"
+      discovery.relabel "qa_pod_metrics" {
+        targets = discovery.kubernetes.qa_metrics.targets
+
+        rule {
+          source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_scrape"]
+          regex         = "true"
+          action        = "keep"
+        }
+
+        rule {
+          source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_path"]
+          regex         = "(.+)"
+          target_label  = "__metrics_path__"
+        }
+
+        rule {
+          source_labels = [
+            "__address__",
+            "__meta_kubernetes_pod_annotation_prometheus_io_port",
+          ]
+          regex        = `([^:]+)(?::\d+)?:(.+)`
+          replacement  = "$1:$2"
+          target_label = "__address__"
+        }
+
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+          regex         = "(.+)"
+          target_label  = "app"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app"]
+          regex         = "(.+)"
+          target_label  = "app"
+        }
+      }
+
+      // Step 3: Scrape metrics from qa pods
+      prometheus.scrape "qa_pod_metrics" {
+        targets         = discovery.relabel.qa_pod_metrics.output
+        forward_to      = [prometheus.remote_write.prometheus.receiver]
+        scrape_interval = "30s"
+        scrape_timeout  = "10s"
+      }
+
+      // Step 4: Remote-write to Prometheus
+      // CRITICAL: Use SHORT service name - NOT monitoring-kube-prometheus-stack-prometheus
+      // The actual service in this cluster is: monitoring-kube-prometheus-prometheus
+      // (no -stack- suffix). Using FQDN with ndots:5 caused DNS failures.
+      prometheus.remote_write "prometheus" {
+        endpoint {
+          url = "http://monitoring-kube-prometheus-prometheus:9090/api/v1/write"
+        }
+      }
+
+      // ══════════════════════════════════════════════════════
+      // ALLOY SELF-MONITORING
+      // ══════════════════════════════════════════════════════
+
+      prometheus.exporter.self "alloy_self" {}
+
+      prometheus.scrape "alloy_self" {
+        targets    = prometheus.exporter.self.alloy_self.targets
+        forward_to = [prometheus.remote_write.prometheus.receiver]
+      }
+
+## ── Run as DaemonSet ─────────────────────────────────────────
+## loki.source.kubernetes uses the K8s API (not host file mounts)
+## so NO hostPath volume mounts are needed
+controller:
+  type: daemonset
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  tolerations:
+    - operator: Exists
+      effect: NoSchedule
+    - operator: Exists
+      effect: NoExecute
+
+  securityContext:
+    runAsUser: 0
+    runAsGroup: 0
+
+## ── RBAC ─────────────────────────────────────────────────────
+rbac:
+  create: true
+
+serviceAccount:
+  create: true
+  name: grafana-alloy
+
+## ── Service ──────────────────────────────────────────────────
+service:
+  enabled: true
+  type: ClusterIP
+  port: 12345
+
+## ── ServiceMonitor ───────────────────────────────────────────
+serviceMonitor:
+  enabled: true
+  labels:
+    release: monitoring

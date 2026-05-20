@@ -1,0 +1,207 @@
+## ============================================================
+## 04-grafana-values.yaml
+## Chart: grafana/grafana
+## Version: 8.10.4
+## Access: AWS ALB - HTTP (internet-facing)
+## FIX: Correct Prometheus & Loki service names (no -stack-)
+## FIX: Added Loki Explore & Traces plugins
+## ============================================================
+
+replicas: 1
+
+## ── Image ────────────────────────────────────────────────────
+image:
+  repository: grafana/grafana
+  tag: "11.6.0"
+  pullPolicy: IfNotPresent
+
+## ── Admin credentials ────────────────────────────────────────
+adminUser: admin
+adminPassword: ""
+
+admin:
+  existingSecret: grafana-admin-secret
+  userKey: admin-user
+  passwordKey: admin-password
+
+## ── Plugins ──────────────────────────────────────────────────
+plugins:
+  - grafana-lokiexplore-app
+  - grafana-exploretraces-app
+
+## ── Persistence ──────────────────────────────────────────────
+persistence:
+  enabled: true
+  type: pvc
+  storageClassName: ebs-sc
+  accessModes:
+    - ReadWriteOnce
+  size: 5Gi
+
+## ── Service ──────────────────────────────────────────────────
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+  annotations: {}
+
+## ── Ingress - AWS ALB HTTP ───────────────────────────────────
+ingress:
+  enabled: true
+  ingressClassName: alb
+
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+    alb.ingress.kubernetes.io/healthcheck-path: /api/health
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "30"
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "5"
+    alb.ingress.kubernetes.io/healthy-threshold-count: "2"
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: "3"
+    alb.ingress.kubernetes.io/load-balancer-attributes: >-
+      idle_timeout.timeout_seconds=60,
+      routing.http2.enabled=true
+    alb.ingress.kubernetes.io/backend-protocol: HTTP
+
+  hosts: []
+  path: /
+  pathType: Prefix
+  tls: []
+
+## ── Data Sources ─────────────────────────────────────────────
+## FIXED: Use short service names (same namespace = no FQDN needed)
+##   Wrong: monitoring-kube-prometheus-stack-prometheus.monitoring.svc.cluster.local
+##   Right: monitoring-kube-prometheus-prometheus
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+
+      - name: Prometheus
+        type: prometheus
+        uid: prometheus
+        url: http://monitoring-kube-prometheus-prometheus:9090
+        access: proxy
+        isDefault: true
+        editable: false
+        jsonData:
+          timeInterval: "30s"
+          httpMethod: POST
+          exemplarTraceIdDestinations: []
+
+      - name: Loki
+        type: loki
+        uid: loki
+        url: http://loki-gateway:80
+        access: proxy
+        isDefault: false
+        editable: false
+        jsonData:
+          maxLines: 1000
+          derivedFields:
+            - name: TraceID
+              matcherRegex: '"trace_?[Ii][Dd]"\s*:\s*"(\w+)"'
+              url: ""
+              urlDisplayLabel: "Trace: $${__value.raw}"
+
+## ── Dashboard Providers ──────────────────────────────────────
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: default
+        orgId: 1
+        folder: "Kubernetes"
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/default
+
+## ── Pre-built Dashboards ─────────────────────────────────────
+dashboards:
+  default:
+    kubernetes-cluster-overview:
+      gnetId: 315
+      revision: 3
+      datasource: Prometheus
+
+    kubernetes-pods:
+      gnetId: 13770
+      revision: 1
+      datasource: Prometheus
+
+    node-exporter-full:
+      gnetId: 1860
+      revision: 37
+      datasource: Prometheus
+
+    loki-logs:
+      gnetId: 13639
+      revision: 2
+      datasource: Loki
+
+    kubernetes-namespace:
+      gnetId: 15758
+      revision: 1
+      datasource: Prometheus
+
+    alertmanager:
+      gnetId: 9578
+      revision: 4
+      datasource: Prometheus
+
+## ── Grafana.ini ──────────────────────────────────────────────
+grafana.ini:
+  server:
+    root_url: "%(protocol)s://%(domain)s/"
+    serve_from_sub_path: false
+
+  auth:
+    disable_login_form: false
+
+  log:
+    mode: console
+    level: info
+
+  explore:
+    enabled: true
+
+  feature_toggles:
+    enable: correlations
+
+  dataproxy:
+    timeout: 120
+    keep_alive_seconds: 60
+
+## ── Resources ────────────────────────────────────────────────
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+## ── Security Context ─────────────────────────────────────────
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 472
+  fsGroup: 472
+
+## ── Service Account ──────────────────────────────────────────
+serviceAccount:
+  create: true
+  name: grafana
+  autoMount: true
+
+## ── RBAC ─────────────────────────────────────────────────────
+rbac:
+  create: true
+  pspEnabled: false
+
+## ── Init chown disabled ──────────────────────────────────────
+initChownData:
+  enabled: false
