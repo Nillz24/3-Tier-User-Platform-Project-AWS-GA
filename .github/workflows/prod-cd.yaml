@@ -21,14 +21,14 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      QA_IMAGE: devopsshack/nodejs-app:latest
-      PROD_LATEST_IMAGE: devopsshack/nodejs-app:prod-${{ github.sha }}
+      QA_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/nodejs-app:latest
+      PROD_LATEST_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/nodejs-app:prod-${{ github.sha }}
 
     steps:
       - name: Login to Docker Hub
         uses: docker/login-action@v4
         with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Pull QA latest image
@@ -58,7 +58,7 @@ jobs:
 
       - name: Update image tag in prod manifest
         run: |
-          sed -i "s|image: devopsshack/nodejs-app:.*|image: devopsshack/nodejs-app:prod-${GITHUB_SHA}|g" k8-manifests/prod/app-deployment.yaml
+          sed -i "s|image: ${{ secrets.DOCKERHUB_USERNAME }}/nodejs-app:.*|image: ${{ secrets.DOCKERHUB_USERNAME }}/nodejs-app:prod-${GITHUB_SHA}|g" k8-manifests/prod/app-deployment.yaml
 
       - name: Show updated manifest
         run: cat k8-manifests/prod/app-deployment.yaml
@@ -91,7 +91,7 @@ jobs:
       - name: Configure AWS credentials from GitHub OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME1 }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup kubectl

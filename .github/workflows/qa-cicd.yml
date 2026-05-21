@@ -405,7 +405,7 @@ jobs:
       - name: Login to Docker Hub
         uses: docker/login-action@v4
         with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Set up QEMU
@@ -420,8 +420,8 @@ jobs:
           load: true
           push: false
           tags: |
-            devopsshack/nodejs-app:${{ github.sha }}
-            devopsshack/nodejs-app:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/nodejs-app:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/nodejs-app:latest
 
       - name: Install Trivy
         uses: aquasecurity/setup-trivy@v0.2.6
@@ -436,7 +436,7 @@ jobs:
 
       - name: Run Trivy image scan (JSON)
         run: |
-          trivy image devopsshack/nodejs-app:${{ github.sha }} \
+          trivy image ${{ secrets.DOCKERHUB_USERNAME }}/nodejs-app:${{ github.sha }} \
             --format json \
             --output image-trivy-report.json \
             --severity HIGH,CRITICAL \
@@ -445,7 +445,7 @@ jobs:
 
       - name: Run Trivy image scan (TABLE)
         run: |
-          trivy image devopsshack/nodejs-app:${{ github.sha }} \
+          trivy image ${{ secrets.DOCKERHUB_USERNAME }}/nodejs-app:${{ github.sha }} \
             --format table \
             --severity HIGH,CRITICAL \
             --ignore-unfixed \
@@ -476,7 +476,7 @@ jobs:
       - name: Generate image SBOM
         uses: anchore/sbom-action@v0
         with:
-          image: devopsshack/nodejs-app:${{ github.sha }}
+          image: ${{ secrets.DOCKERHUB_USERNAME }}/nodejs-app:${{ github.sha }}
           format: spdx-json
           output-file: image-sbom.spdx.json
           upload-artifact: true  
@@ -486,8 +486,8 @@ jobs:
         with:
           push: true
           tags: |
-            devopsshack/nodejs-app:${{ github.sha }}
-            devopsshack/nodejs-app:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/nodejs-app:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/nodejs-app:latest
 
 
   update-qa-manifest:
@@ -503,7 +503,7 @@ jobs:
           ref: qa
       - name: Update image tag in manifest
         run: |
-          sed -i "s|image: devopsshack/nodejs-app:.*|image: devopsshack/nodejs-app:${GITHUB_SHA}|g" k8-manifests/qa/app-deployment.yaml
+          sed -i "s|image: ${{ secrets.DOCKERHUB_USERNAME }}/nodejs-app:.*|image: ${{ secrets.DOCKERHUB_USERNAME }}/nodejs-app:${GITHUB_SHA}|g" k8-manifests/qa/app-deployment.yaml
       - name: Show updated manifest (debug)
         run: |
           cat k8-manifests/qa/app-deployment.yaml
