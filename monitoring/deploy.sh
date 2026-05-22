@@ -19,7 +19,7 @@ CLUSTER_NAME="my-cluster"
 MONITORING_NS="monitoring"
 QA_NS="qa"
 GRAFANA_ADMIN_PASSWORD="admin123"
-NODE_ROLE_NAME="eksctl-my-cluster-nodegroup-my-nod-NodeInstanceRole-YAYdXDbAHW80"
+NODE_ROLE_NAME="my-cluster-node-role"
 
 # Chart versions
 PROMETHEUS_CHART_VERSION="67.4.0"
