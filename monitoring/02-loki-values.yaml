@@ -142,5 +142,27 @@ monitoring:
     labels:
       release: monitoring
 
+## ── Disable memcached caches ───────────────────────────────
+chunksCache:
+  enabled: false
+
+resultsCache:
+  enabled: false
+
+memcached:
+  enabled: false
+
+memcachedChunks:
+  enabled: false
+
+memcachedFrontend:
+  enabled: false
+
+memcachedIndexQueries:
+  enabled: false
+
+memcachedIndexWrites:
+  enabled: false
+  
 test:
   enabled: false
