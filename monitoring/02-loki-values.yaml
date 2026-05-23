@@ -43,11 +43,11 @@ loki:
 
   limits_config:
     retention_period: 30d
-    ingestion_rate_mb: 16
-    ingestion_burst_size_mb: 32
-    max_query_length: 721h
-    max_query_parallelism: 32
-    max_streams_per_user: 10000
+    ingestion_rate_mb: 8
+    ingestion_burst_size_mb: 16
+    max_query_length: 168h
+    max_query_parallelism: 4
+    max_streams_per_user: 5000
     max_line_size: 256000
 
   query_range:
@@ -119,11 +119,11 @@ gateway:
 
   resources:
     requests:
-      cpu: 100m
-      memory: 128Mi
-    limits:
       cpu: 200m
-      memory: 256Mi
+      memory: 228Mi
+    limits:
+      cpu: 300m
+      memory: 356Mi
 
   service:
     type: ClusterIP
@@ -142,27 +142,37 @@ monitoring:
     labels:
       release: monitoring
 
-## ── Disable memcached caches ───────────────────────────────
+## ── Lightweight cache configuration for small EKS cluster ──
+
 chunksCache:
-  enabled: false
+  enabled: true
+
+  replicas: 1
+
+  allocatedMemory: 128
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 100m
+      memory: 256Mi
 
 resultsCache:
-  enabled: false
+  enabled: true
 
-memcached:
-  enabled: false
+  replicas: 1
 
-memcachedChunks:
-  enabled: false
+  allocatedMemory: 64
 
-memcachedFrontend:
-  enabled: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
 
-memcachedIndexQueries:
-  enabled: false
-
-memcachedIndexWrites:
-  enabled: false
-  
 test:
   enabled: false
