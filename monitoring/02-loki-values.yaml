@@ -46,6 +46,7 @@ loki:
     ingestion_rate_mb: 8
     reject_old_samples: false
     reject_old_samples_max_age: 168h
+    creation_grace_period: 12h 
     ingestion_burst_size_mb: 16
     max_query_length: 168h
     max_query_parallelism: 4
