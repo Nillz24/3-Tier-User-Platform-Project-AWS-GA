@@ -131,7 +131,7 @@ fi
 # ── IAM policy for Loki S3 access ─────────────────────────────
 step "Setting up IAM policy for Loki S3 access"
 
-sed -i "s|<YOUR_S3_BUCKET>|$S3_BUCKET|g" 05-loki-s3-iam-policy.json
+sed -i "s|qa-demo-s3-777|$S3_BUCKET|g" 05-loki-s3-iam-policy.json
 
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
@@ -166,7 +166,7 @@ log "IAM policy attached"
 # ── Patch Loki values ─────────────────────────────────────────
 step "Patching Loki values"
 
-sed -i "s|YOUR_S3_BUCKET|$S3_BUCKET|g" 02-loki-values.yaml
+sed -i "s|qa-demo-s3-777|$S3_BUCKET|g" 02-loki-values.yaml
 sed -i "s|ap-south-1|$AWS_REGION|g" 02-loki-values.yaml
 
 log "Loki values patched"
