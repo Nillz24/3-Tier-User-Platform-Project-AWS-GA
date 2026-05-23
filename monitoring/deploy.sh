@@ -219,6 +219,7 @@ step "2/4 Installing Loki"
 helm upgrade --install loki grafana/loki \
   --namespace "$MONITORING_NS" \
   --values 02-loki-values.yaml \
+  --set monitoring.lokiCanary.enabled=false \
   --version "$LOKI_CHART_VERSION" \
   --wait \
   --timeout 10m

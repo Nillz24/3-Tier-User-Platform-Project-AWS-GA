@@ -49,6 +49,7 @@ loki:
     max_query_parallelism: 4
     max_streams_per_user: 5000
     max_line_size: 256000
+    query_timeout: 10m
 
   query_range:
     results_cache:
@@ -73,7 +74,7 @@ singleBinary:
       memory: 512Mi
     limits:
       cpu: 1000m
-      memory: 1Gi
+      memory: 2Gi
 
   ## Local WAL disk - uses ebs-sc StorageClass
   persistence:
@@ -116,7 +117,11 @@ bloomGateway:
 gateway:
   enabled: true
   replicas: 1
-
+  nginxConfig:
+    serverSnippet: |
+      proxy_read_timeout 300;
+      proxy_connect_timeout 300;
+      proxy_send_timeout 300;
   resources:
     requests:
       cpu: 200m
