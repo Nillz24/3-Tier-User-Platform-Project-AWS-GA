@@ -1,0 +1,186 @@
+## ============================================================
+## 02-loki-values.yaml
+## Chart: grafana/loki
+## Version: 6.29.0
+## ============================================================
+
+deploymentMode: SingleBinary
+
+loki:
+  auth_enabled: false
+
+  commonConfig:
+    replication_factor: 1
+
+  ## ── S3 Storage ─────────────────────────────────────────────
+  ## Bucket name is hardcoded (patched by deploy.ps1 at runtime)
+  storage:
+    type: s3
+    bucketNames:
+      chunks: qa-demo-s3-777
+      ruler: qa-demo-s3-777
+      admin: qa-demo-s3-777
+    s3:
+      region: ap-south-1
+      s3ForcePathStyle: false
+      insecure: false
+    ## Credentials come from EKS node IAM role or IRSA (no keys needed)
+
+  schemaConfig:
+    configs:
+      - from: "2024-01-01"
+        store: tsdb
+        object_store: s3
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+
+  ingester:
+    chunk_idle_period: 5m
+    chunk_retain_period: 30s
+    max_chunk_age: 1h
+
+  limits_config:
+    retention_period: 30d
+    ingestion_rate_mb: 8
+    reject_old_samples: false
+    reject_old_samples_max_age: 168h
+    creation_grace_period: 12h 
+    ingestion_burst_size_mb: 16
+    max_query_length: 168h
+    max_query_parallelism: 4
+    max_streams_per_user: 5000
+    max_line_size: 256000
+    query_timeout: 10m
+
+  query_range:
+    results_cache:
+      cache:
+        embedded_cache:
+          enabled: true
+          max_size_mb: 100
+
+  ruler:
+    storage:
+      type: local
+      local:
+        directory: /var/loki/rules
+
+## ── Single Binary (suitable for QA) ─────────────────────────
+singleBinary:
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+  ## Local WAL disk - uses ebs-sc StorageClass
+  persistence:
+    enabled: true
+    storageClass: ebs-sc
+    size: 10Gi
+
+  ## Uncomment if using IRSA for S3 access
+  # serviceAccount:
+  #   annotations:
+  #     eks.amazonaws.com/role-arn: arn:aws:iam::<ACCOUNT_ID>:role/loki-irsa-role
+
+## ── Disable scaled-out components (not needed for SingleBinary) ──
+read:
+  replicas: 0
+write:
+  replicas: 0
+backend:
+  replicas: 0
+ingester:
+  replicas: 0
+querier:
+  replicas: 0
+queryFrontend:
+  replicas: 0
+queryScheduler:
+  replicas: 0
+distributor:
+  replicas: 0
+compactor:
+  replicas: 0
+indexGateway:
+  replicas: 0
+bloomCompactor:
+  replicas: 0
+bloomGateway:
+  replicas: 0
+
+## ── Gateway (nginx proxy in front of Loki) ───────────────────
+gateway:
+  enabled: true
+  replicas: 1
+  nginxConfig:
+    serverSnippet: |
+      proxy_read_timeout 300;
+      proxy_connect_timeout 300;
+      proxy_send_timeout 300;
+  resources:
+    requests:
+      cpu: 200m
+      memory: 228Mi
+    limits:
+      cpu: 300m
+      memory: 356Mi
+
+  service:
+    type: ClusterIP
+    port: 80
+
+## ── Disable built-in monitoring (we have our own stack) ──────
+monitoring:
+  selfMonitoring:
+    enabled: false
+    grafanaAgent:
+      installOperator: false
+  lokiCanary:
+    enabled: false
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: monitoring
+
+## ── Lightweight cache configuration for small EKS cluster ──
+
+chunksCache:
+  enabled: true
+
+  replicas: 1
+
+  allocatedMemory: 128
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 100m
+      memory: 256Mi
+
+resultsCache:
+  enabled: true
+
+  replicas: 1
+
+  allocatedMemory: 64
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+test:
+  enabled: false
